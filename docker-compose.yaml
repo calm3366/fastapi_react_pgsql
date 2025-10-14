@@ -54,6 +54,5 @@ services:
       - ./backend/dev-entrypoint.sh:/dev-entrypoint.sh:cached
     command: /dev-entrypoint.sh
 
-
 volumes:
   db_data:

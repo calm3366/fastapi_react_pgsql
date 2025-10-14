@@ -6,19 +6,17 @@
 *.tmp
 *.swp
 
-# Конкретные файлы
-promt.txt
-backend/app/main.py
-
 # Python
 __pycache__/
+backend/migrations/versions/*.py
 *.pyc
 
 # MacOS
 .DS_Store
 
-# Миграции
-migrations/
-
 # Opensearch
 opensearch/
+
+# Конкретные файлы
+promt.txt
+backend/app/main.py
