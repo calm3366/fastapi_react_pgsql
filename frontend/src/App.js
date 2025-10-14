@@ -1,8 +1,14 @@
 // frontend/src/App.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import BondsPage from "./BondsPage";
-import DynamicChart from "./DynamicChart";
+import CouponsPage from "./CouponsPage";
+import LogsPage from "./LogsPage";
+import TradesPage from "./TradesPage";
+import SummaryPanel from "./SummaryPanel";
+import VolumePanel from "./VolumePanel";
+import RGBIChart from "./RGBIChart";
 import "./index.css";
+
 
 export default function App() {
   const [query, setQuery]     = useState("");
@@ -11,36 +17,51 @@ export default function App() {
   const [lastUpdateTime, setLastUpdateTime] = useState(
     localStorage.getItem("lastUpdateTime") || null
   );
-  const [logs, setLogs] = useState([]); // Логи событий
+  const [logs, setLogs] = useState([]);
+  const [invested, setInvested] = useState(0);
+  const [tradesSum, setTradesSum] = useState(0);
+  const [couponProfit, setCouponProfit] = useState(0);
+  const [currentValue, setCurrentValue] = useState(0);
+  const [totalValue, setTotalValue] = useState(0);
+  const [profitPercent, setProfitPercent] = useState(0);
+  const [positions, setPositions] = useState([]);
+  const [showRGBI, setShowRGBI] = useState(false);
+  
 
-  // Функция загрузки облигаций
+  // Загружаем список облигаций
   const loadBonds = async () => {
     try {
       const res = await fetch("/bonds");
       if (!res.ok) throw new Error(res.statusText);
-      setBonds(await res.json());
-    } catch (e) {
-      console.error("GET /bonds failed", e);
+      const data = await res.json();
+      setBonds(data);
+    } catch (err) {
+      console.error("Ошибка загрузки облигаций", err);
     }
   };
-  
+  // Загружаем позиции (сделки)
+  const loadPositions = async () => {
+    try {
+      const res = await fetch("/positions"); // эндпоинт с позициями
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      setPositions(data);
+    } catch (err) {
+      console.error("Ошибка загрузки позиций", err);
+    }
+  };
+
   const API_URL = process.env.REACT_APP_API_URL || "";
   // console.log("🔌 API_URL =", API_URL);
 
-  const loadLogs = async () => {
-    try {
-      const res = await fetch(`${API_URL}/logs`);
-      if (!res.ok) throw new Error(res.statusText);
-      setLogs(await res.json());
-    } catch (e) {
-      console.error("GET /logs failed", e);
-    }
-  };
-
-
-  useEffect(() => { 
+  useEffect(() => {
     loadBonds();
-    loadLogs();
+    loadPositions();
+    fetch(`${API_URL}/logs`)
+      .then(res => res.json())
+      .then(setLogs)
+      .catch(err => console.error("Ошибка загрузки логов", err));
+    loadSummary();
   }, []);
 
   const addLog = async (msg) => {
@@ -51,16 +72,15 @@ export default function App() {
         body: JSON.stringify({ message: msg }),
       });
       if (!res.ok) throw new Error(res.statusText);
-      const saved = await res.json(); // {status, id, timestamp?, message?}
+      const saved = await res.json();
 
-      // Если бэк вернёт только id и status — подставим timestamp и message сами
       const logObj = {
         id: saved.id ?? Date.now(),
         timestamp: saved.timestamp ?? new Date().toISOString(),
         message: saved.message ?? msg,
       };
 
-      setLogs(prev => [logObj, ...prev]);
+      setLogs(prev => [logObj, ...prev]); // 🔹 обновляем локальный список
     } catch (e) {
       console.error("POST /logs failed", e);
     }
@@ -88,7 +108,6 @@ export default function App() {
         body: JSON.stringify({ secid }),
       });
       if (!res.ok) throw new Error(res.statusText);
-
       await loadBonds();
       setResults([]);
       setQuery("");
@@ -99,18 +118,30 @@ export default function App() {
     }
   };
 
+  const [errorModalOpen, setErrorModalOpen] = useState(false);
+  const [errorModalMessage, setErrorModalMessage] = useState("");
+
   const handleDeleteSelected = async (ids) => {
     try {
-      await fetch("/bonds", {
+      const res = await fetch("/bonds", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
       });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        setErrorModalMessage(errData.detail || "Ошибка удаления");
+        setErrorModalOpen(true);
+        return;
+      }
+
       setBonds(prev => prev.filter(b => !ids.includes(b.id)));
       addLog(`Удалено ${ids.length} облигаций`);
     } catch (e) {
       console.error("DELETE /bonds failed", e);
-      addLog("Ошибка удаления");
+      setErrorModalMessage("Ошибка удаления");
+      setErrorModalOpen(true);
     }
   };
 
@@ -135,9 +166,40 @@ export default function App() {
     }
   };
 
+    const loadSummary = async () => {
+      try {
+        const res = await fetch("/api/portfolio_summary");
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        setInvested(data.invested ?? 0);
+        setTradesSum(data.trades_sum ?? 0);
+        setCouponProfit(data.coupon_profit ?? 0);
+        setCurrentValue(data.current_value ?? 0);
+        setTotalValue(data.total_value ?? 0);
+        setProfitPercent(data.profit_percent ?? 0);
+      } catch (err) {
+        console.error("Ошибка загрузки сводки", err);
+      }
+    };
+
+  // объединяем данные (для структуры портфеля)
+  const enrichedBonds = useMemo(() => {
+    if (!bonds || !positions) return [];
+
+    const qtyMap = positions.reduce((acc, p) => {
+      acc[p.bond_id] = (acc[p.bond_id] ?? 0) + p.buy_qty;
+      return acc;
+    }, {});
+
+    return bonds.map(b => ({
+      ...b,
+      buy_qty: qtyMap[b.id] ?? 0
+    }));
+  }, [bonds, positions]);
+
   return (
     <div className="dashboard">
-      <div className="left-panel">
+      <div className="up-panel">
         <BondsPage
           query={query}
           setQuery={setQuery}
@@ -148,24 +210,74 @@ export default function App() {
           onDeleteSelected={handleDeleteSelected}
           onRefreshAll={handleRefreshAll}
           lastUpdateTime={lastUpdateTime}
+          addLog={addLog}
+          loadSummary={loadSummary}
+          onToggleRGBI={setShowRGBI} 
         />
       </div>
-      <div className="right-panel">
-        <div className="chart-wrapper">
-          <DynamicChart bonds={bonds} />
+      <VolumePanel bonds={enrichedBonds} /> 
+      <SummaryPanel
+          invested={invested}
+          setInvested={setInvested}
+          tradesSum={tradesSum}
+          setTradesSum={setTradesSum}
+          couponProfit={couponProfit}
+          setCouponProfit={setCouponProfit}
+          currentValue={currentValue}
+          setCurrentValue={setCurrentValue}
+          totalValue={totalValue}
+          setTotalValue={setTotalValue}
+          profitPercent={profitPercent}
+          setProfitPercent={setProfitPercent}
+        />
+      <div className="bottom-panel"> 
+        <div className="left-panel">
+          <TradesPage addLog={addLog} loadSummary={loadSummary} loadBonds={loadBonds}/>
+        </div>
+        <div className="center-panel">
+          <CouponsPage bonds={bonds} />
         </div>
         <div className="logs-wrapper">
-          <h3>Логи событий</h3>
-          <div className="logs-list">
-            {logs.length === 0 && <div style={{color:"#888"}}>Пока нет событий</div>}
-            {logs.map((log) => (
-              <div key={log.id} className="log-item">
-                {new Date(log.timestamp).toLocaleString('ru-RU')} — {log.message}
-              </div>
-            ))}
-          </div>
+          <LogsPage logs={logs} />
         </div>
       </div>
+      {errorModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            background: '#fff',
+            padding: 20,
+            borderRadius: 4,
+            minWidth: 250
+          }}>
+            <p>{errorModalMessage}</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setErrorModalOpen(false)}>Закрыть</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showRGBI && (
+        <div
+          className="rgbi-backdrop"
+        >
+          <div
+            className="rgbi-overlay"
+            onClick={(e) => e.stopPropagation()} // клик внутри не закрывает
+            onMouseLeave={() => setShowRGBI(false)}
+          >
+            <RGBIChart />
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -10,7 +10,7 @@ class Bond(Base):
     id            = Column(Integer, primary_key=True, autoincrement=True)
     secid         = Column(String, unique=True, index=True, nullable=True)
     isin = Column(String, nullable=True)
-    name          = Column(String, nullable=True)
+    name          = Column(String, nullable=False)
     emitent       = Column(String, index=True, nullable=True)
     market        = Column(String, index=True, nullable=True)
     coupon        = Column(Float, nullable=True)
@@ -20,7 +20,8 @@ class Bond(Base):
     # rating        = Column(String, index=True, nullable=True)
     ytm          = Column(Float, nullable=True) 
     ytm_date     = Column(Date,  nullable=True) 
-    last_price = Column(Float, nullable=True)         
+    last_price = Column(Float, nullable=True)    
+    last_buy_price = Column(Float, nullable=True)  
     amortization = Column(Boolean, nullable=True)     
     offer_date = Column(Date, nullable=True)  
     # связь с таблицей цен
@@ -34,6 +35,13 @@ class Bond(Base):
     currency = Column(String, nullable=True)         # код или название валюты
     currency_symbol = Column(String, nullable=True)  # ₽, $, €, ¥
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    trades = relationship("Trade", back_populates="bond", cascade="all, delete-orphan")
+    coupons = relationship("Coupon", back_populates="bond", cascade="all, delete-orphan")
+    # поля для сравнения цены
+    day_open = Column(Float, nullable=True)
+    week_open = Column(Float, nullable=True)
+    month_open = Column(Float, nullable=True)
+    year_open = Column(Float, nullable=True)
 
 class Price(Base):
     __tablename__ = "prices"
@@ -53,3 +61,46 @@ class EventLog(Base):
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     message = Column(String, nullable=False)
+
+class Trade(Base):
+    __tablename__ = "trades"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bond_id = Column(Integer, ForeignKey("bonds.id"), nullable=False)
+
+    buy_date = Column(Date, nullable=True)
+    buy_price = Column(Float, nullable=True)
+    buy_qty = Column(Integer, nullable=True)
+    buy_nkd = Column(Float, nullable=True)
+
+    sell_date = Column(Date, nullable=True)
+    sell_price = Column(Float, nullable=True)
+    sell_qty = Column(Integer, nullable=True)
+    sell_nkd = Column(Float, nullable=True)
+
+    total_amount = Column(Float, nullable=True)  
+    bond = relationship("Bond", back_populates="trades")
+
+    date = Column(Date, nullable=True)
+
+class Coupon(Base):
+    __tablename__ = "coupons"
+
+    id = Column(Integer, primary_key=True)
+    bond_id = Column(Integer, ForeignKey("bonds.id", ondelete="CASCADE"))
+    date = Column(Date, nullable=False)
+    value = Column(Float, nullable=True)
+    currency = Column(String, nullable=True)
+
+    bond = relationship("Bond", back_populates="coupons")
+
+class PortfolioSummaryDB(Base):
+    __tablename__ = "portfolio_summary"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invested = Column(Float, default=0.0)
+    trades_sum = Column(Float, default=0.0)
+    coupon_profit = Column(Float, default=0.0)
+    current_value = Column(Float, default=0.0)
+    total_value = Column(Float, default=0.0)
+    profit_percent = Column(Float, default=0.0)

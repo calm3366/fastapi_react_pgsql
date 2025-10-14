@@ -1,47 +1,8 @@
-/* frontend/src/Dashboard.css */
-.dashboard {
-  display: grid;
-  grid-template-columns: 65% 35%; /* левая часть 3/4, правая 1/4 */
-  height: 100vh;
-}
-
-.left-panel {
-  overflow-y: auto;
-  padding: 10px;
-}
-
-.right-panel {
-  display: flex;
-  flex-direction: column;
-  height: 50%;
-  border-left: 1px solid #ccc;
-}
-
-.chart-wrapper {
-  flex: 1 0 50%; /* половина правой панели */
-  min-height: 200px;
-  padding: 10px;
-}
-
-.logs-wrapper {
-  flex: 1 0 50%;
-  padding: 10px;
-  border-top: 1px solid #ccc;
-  display: flex;
-  flex-direction: column;
-}
-
-.logs-list {
-  flex: 1;
-  overflow-y: auto;
-  font-size: 0.85rem;
-  background: #f9f9f9;
-  padding: 5px;
-}
-
-.log-item {
-  border-bottom: 1px solid #eee;
-  padding: 2px 0;
+/* frontend/src/index.css */
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden; /* убираем глобальные скроллы */
 }
 
 body {
@@ -50,11 +11,92 @@ body {
     Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   background-color: #fafafa;
   color: #222;
+  font-size: 0.7rem; /* уменьшенный общий шрифт */
+  line-height: 1.2;  /* уменьш. межстрочный интервал */
 } 
+
+/* Убираем отступ у заголовка */
+h1 {
+  margin-top: 0;
+}
+
+h2 { font-size: 1.2rem; }
 
 h1, h2, h3, h4, h5 {
   font-weight: 600;
+   margin: 0.2em 0;    /* меньше отступы сверху/снизу  */
 }
+
+.dashboard {
+  display: grid;
+  grid-template-rows: 70% 50px 1fr; /* верх, summary фикс 62px, низ занимает остаток */
+  height: 100vh;
+}
+
+.up-panel {
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.bottom-panel {
+  display: flex;
+  height: 100%;
+  flex-direction: row;  /* горизонтально три панели */
+  overflow-x: hidden; /* убираем горизонтальный скролл */
+  overflow-y: hidden;
+}
+
+.left-panel,
+.center-panel,
+.logs-wrapper {
+  display: flex;
+  flex-direction: column; /* вертикальная раскладка */
+  min-height: 100%;
+  padding-left: 10px;
+  margin-top: 2px; 
+  box-sizing: border-box; /* чтобы padding не ломал ширину */
+}
+
+/* задаём доли ширины */
+.left-panel {
+  flex: 0 0 40%;
+}
+
+.center-panel {
+  flex: 0 0 25%;
+  border-left: 2px solid #ccc;
+  border-right: 2px solid #ccc;
+}
+
+.logs-wrapper {
+  flex: 0 0 35%;
+}
+
+.panel-header {
+  flex: none;
+  height: var(--panel-header-height);
+  display: flex;
+  align-items: center;
+  font-weight: bold;
+  font-size: 16px;       
+  margin-top: 3px;  
+}
+
+.coupon-list,
+.logs-list {
+  flex: 1;                 /* занимает всё оставшееся место */
+  overflow-y: auto;
+  margin-top: 0;            /* убираем лишние отступы */
+}
+
+.logs-list {
+  margin-top: 6px; /* подобрать под визуальное совпадение */
+}
+
+.log-item {
+  border-bottom: 1px solid #eee;
+}
+
 
 button {
   font-family: inherit;
@@ -69,11 +111,26 @@ button:hover {
 
 table {
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .logs-list {
   font-family: 'Inter', sans-serif;
+}
+
+/* для BondsPage.jsx */
+.bonds-table tbody tr:hover {
+  background-color: #6d94b6; /* нежно‑голубой фон при наведении */
+  cursor: pointer;
+}
+
+.bonds-table {
+  font-size: 0.8rem;   /* уменьшенный шрифт */
+} 
+
+.bonds-table th,
+.bonds-table td {
+  padding: 2px 4px;    /* меньше отступы внутри ячеек */
 }
 
 /* для DynamicChart.jsx */
@@ -83,6 +140,149 @@ table {
 .price-col {
   width: 90px;
 }
+.dwmy-col {
+  width: 200px;
+}
 td {
   text-align: center;
+}
+
+.summary-panel {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: stretch;
+  width: 100%;
+}
+
+.summary-item {
+  flex: 1;                /* каждая занимает равную часть */
+  padding: 8px 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-right: 1px solid #ddd; /* разделитель */
+}
+
+.summary-item:last-child {
+  border-right: none; /* убираем разделитель у последнего */
+}
+
+.summary-item label {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.summary-item span {
+  font-size: 14px;
+}
+
+
+.category-item {
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: #fafafa;
+  font-size: 0.85rem;
+}
+
+
+/* базовые цвета строк BondPage*/
+.row.corpFix {
+  background-color: #8884d822; /* фиолетовый с прозрачностью */
+}
+.row.corpFloat {
+  background-color: #82ca9d22; /* зелёный */
+}
+.row.ofz {
+  background-color: #ffc65822; /* жёлтый */
+}
+.row.fx {
+  background-color: #ff804222; /* оранжевый */
+}
+/* hover‑эффект */
+.row.corpFix:hover {
+  background-color: #8884d855;
+}
+.row.corpFloat:hover {
+  background-color: #82ca9d55;
+}
+.row.ofz:hover {
+  background-color: #ffc65855;
+}
+.row.fx:hover {
+  background-color: #ff804255;
+}
+
+
+
+/* базовые цвета блоков VolumePanel */
+.summary-item.corpFix { background-color: #8884d822; }
+.summary-item.corpFloat { background-color: #82ca9d22; }
+.summary-item.ofz { background-color: #ffc65822; }
+.summary-item.fx { background-color: #ff804222; }
+
+.summary-item.corpFix:hover { background-color: #8884d855; }
+.summary-item.corpFloat:hover { background-color: #82ca9d55; }
+.summary-item.ofz:hover { background-color: #ffc65855; }
+.summary-item.fx:hover { background-color: #ff804255; }
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10%) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes slideUp {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-10%) scale(0.95); }
+}
+.rgbi-chart-wrapper {
+  animation: slideDown 0.3s forwards;
+}
+.rgbi-chart-wrapper.hide {
+  animation: slideUp 0.3s forwards;
+}
+
+
+/* Индекс RGBI */
+/* затемнённый фон */
+.rgbi-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.5);
+  z-index: 1999;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  opacity: 0;
+  animation: fadeIn 0.3s forwards;
+}
+/* окно с графиком */
+.rgbi-overlay {
+  background: #fff;
+  width: 75%;   /* было 60% */
+  height: 80%;  /* было 70% */
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.95);
+  animation: zoomIn 0.3s forwards;
+}
+/* анимации */
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+@keyframes zoomIn {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }

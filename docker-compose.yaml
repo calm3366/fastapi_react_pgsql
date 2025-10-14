@@ -1,6 +1,4 @@
 # docker-compose.yaml
-version: "3.9"
-
 services:
   db:
     image: postgres:15
@@ -55,6 +53,7 @@ services:
       - ./backend/alembic.ini:/app/alembic.ini:cached
       - ./backend/dev-entrypoint.sh:/dev-entrypoint.sh:cached
     command: /dev-entrypoint.sh
+
 
 volumes:
   db_data:

@@ -22,6 +22,13 @@ class BondSearchOut(BaseModel):
     maturity_date: Optional[str] = None
     rating: Optional[str] = None
 
+class CouponOut(BaseModel):
+    date: date
+    value: Optional[float] = None
+    currency: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+    
 # Схема для работы с БД (с id)
 class BondOut(BaseModel):
     id: int
@@ -50,7 +57,13 @@ class BondOut(BaseModel):
     currency: Optional[str] = None
     currency_symbol: Optional[str] = None
     updated_at: datetime | None = None
-    
+    coupons: list[CouponOut] = []
+    day_open: Optional[float]
+    week_open: Optional[float]
+    month_open: Optional[float]
+    year_open: Optional[float]
+    last_buy_price: Optional[float] = None
+
     @computed_field
     @property
     def rating(self) -> str:
@@ -77,3 +90,89 @@ class EventLogOut(BaseModel):
 
 class EventLogIn(BaseModel):
     message: str
+
+class BondShort(BaseModel):
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+class TradeIn(BaseModel):
+    bond_id: int
+    buy_date: Optional[date] = None
+    buy_price: Optional[float] = None
+    buy_qty: Optional[int] = None
+    buy_nkd: Optional[float] = None
+    sell_date: Optional[date] = None
+    sell_price: Optional[float] = None
+    sell_qty: Optional[int] = None
+    sell_nkd: Optional[float] = None
+
+class TradeOut(TradeIn):
+    id: int
+    bond_id: int
+    buy_date: Optional[date]
+    buy_price: Optional[float]
+    buy_qty: Optional[int]
+    buy_nkd: Optional[float]
+    sell_date: Optional[date]
+    sell_price: Optional[float]
+    sell_qty: Optional[int]
+    sell_nkd: Optional[float]
+    total_amount: Optional[float]
+    bond: Optional[BondShort] 
+
+    model_config = ConfigDict(from_attributes=True)
+
+class TradeCreate(BaseModel):
+    bond_id: int
+    buy_date: Optional[date] = None
+    buy_price: Optional[float] = None
+    buy_qty: Optional[int] = None
+    buy_nkd: Optional[float] = None
+    sell_date: Optional[date] = None
+    sell_price: Optional[float] = None
+    sell_qty: Optional[int] = None
+    sell_nkd: Optional[float] = None
+    total_amount: Optional[float] = None
+
+# Базовая схема (общие поля)
+class PortfolioSummaryBase(BaseModel):
+    invested: float
+    trades_sum: float
+    coupon_profit: float
+    current_value: float
+    total_value: float
+    profit_percent: float
+
+# Для ответа (GET/PUT)
+class PortfolioSummaryOut(BaseModel):
+    invested: float
+    trades_sum: float
+    coupon_profit: float
+    current_value: float
+    total_value: float
+    profit_percent: float
+
+    class Config:
+        from_attributes = True
+
+# Для входных данных (PUT) — только "Вложено"
+class PortfolioSummaryIn(BaseModel):
+    invested: float
+
+# Модель позиции
+class Position(BaseModel):
+    bond_id: int
+    buy_qty: int
+    buy_price: Optional[float] = None
+    buy_date: Optional[str] = None
+
+class BondWithWeightOut(BaseModel):
+    id: int
+    secid: str
+    name: str
+    last_price: Optional[float] = None
+    total_qty: Optional[int] = None
+    bond_value: Optional[float] = None
+    weight: Optional[float] = None
+

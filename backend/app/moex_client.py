@@ -3,7 +3,7 @@ import httpx, logging, re
 from typing import Optional
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from types import SimpleNamespace
 from bs4 import BeautifulSoup
 
@@ -117,3 +117,61 @@ async def fetch_bond_from_moex(secid_or_isin: str):
 
     logger.warning("ISIN/SECID %s not found on MOEX", secid_or_isin)
     return None
+
+async def fetch_coupons_from_moex(secid: str) -> list[dict]:
+    """
+    Возвращает список купонов в формате:
+    [{"date": date, "value": float|None, "currency": "RUB", "is_past": bool}, ...]
+    - Берём все купоны начиная с года назад и до будущего
+    - Добавляем флаг is_past (True если купон <= сегодня)
+    """
+    url = f"https://iss.moex.com/iss/securities/{secid}/bondization.json"
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        data = r.json()
+
+    coupons = []
+    cols = data["coupons"]["columns"]
+
+    today = date.today()
+    year_ago = today - timedelta(days=365)
+
+    for row in data["coupons"]["data"]:
+        row_dict = dict(zip(cols, row))
+
+        # Дата купона
+        date_val = None
+        if row_dict.get("coupondate"):
+            try:
+                date_val = date.fromisoformat(row_dict["coupondate"])
+            except ValueError:
+                pass
+
+        if not date_val:
+            continue
+
+        # фильтруем: только за последний год и будущее
+        if date_val < year_ago:
+            continue
+
+        # Значение купона
+        raw_value = row_dict.get("value")
+        if raw_value in (None, ""):
+            value = None
+        else:
+            try:
+                value = float(str(raw_value).replace(",", "."))
+            except (ValueError, TypeError):
+                value = None
+
+        coupons.append({
+            "date": date_val,
+            "value": value,
+            "currency": row_dict.get("currency"),
+            "is_past": date_val <= today
+        })
+
+    # сортировка по дате
+    coupons.sort(key=lambda c: c["date"])
+    return coupons

@@ -33,7 +33,7 @@ async def fetch_ratings_from_corpbonds(code: str, is_ofz: bool = False):
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # --- Цена (для всех бумаг) ---
+    # --- Цена ---
     price_val = None
     price_el = soup.select_one(
         "#root > main > section > main > article:nth-child(1) > table > tbody > tr:nth-child(6) > td:nth-child(2) > p"
@@ -46,21 +46,30 @@ async def fetch_ratings_from_corpbonds(code: str, is_ofz: bool = False):
             except ValueError:
                 pass
 
-    # --- YTM (только для ОФЗ) ---
+    # --- YTM (для ОФЗ, по точному селектору) ---
     ytm_val = None
     if is_ofz:
-        ytm_el = soup.select_one(
-            "#root > main > section > main > article:nth-child(1) > table > tbody > tr:nth-child(2) > td:nth-child(2) > p > span:nth-child(1)"
-        )
-        if ytm_el:
-            m = re.search(r"[\d\s,]+", ytm_el.get_text())
-            if m:
-                try:
-                    ytm_val = float(m.group(0).replace(" ", "").replace(",", "."))
-                except ValueError:
-                    pass
+        # Эквивалент твоему XPath:
+        # /html/body/div[1]/main/section/main/article[1]/table/tbody/tr[2]/td[2]/p/span[1]
+        # В CSS без tbody и индексируем через :nth-of-type(...)
+        sel = "main section main article:nth-of-type(1) table tr:nth-of-type(2) td:nth-of-type(2) p span"
+        el = soup.select_one(sel)
+        if not el:
+            # иногда у corpbonds у этого <span> есть класс .val — пробуем его
+            el = soup.select_one("main section main article:nth-of-type(1) table tr:nth-of-type(2) td:nth-of-type(2) p span.val")
+        if el:
+            raw = el.get_text(strip=True)
+            logger.debug(f"YTM raw text (direct): {raw}")
+            cleaned = raw.replace("%", "").replace("\xa0", "").replace(" ", "")
+            try:
+                ytm_val = float(cleaned.replace(",", "."))
+                logger.debug(f"YTM parsed (direct): {ytm_val}")
+            except ValueError:
+                logger.debug("YTM parse failed (direct), leaving as None")
+                ytm_val = None
 
-    # --- Рейтинги ---
+
+
     ratings = {
         "akra": {"rating": None, "forecast": None},
         "raexpert": {"rating": None, "forecast": None},
@@ -69,7 +78,7 @@ async def fetch_ratings_from_corpbonds(code: str, is_ofz: bool = False):
         "coupon_rate": None,
         "currency": None,
         "last_price": price_val,
-        "ytm": ytm_val
+        "ytm": ytm_val,
     }
 
     # --- Рейтинги ---
@@ -86,7 +95,7 @@ async def fetch_ratings_from_corpbonds(code: str, is_ofz: bool = False):
                 ratings["nkr"]["rating"] = text.replace("НКР", "").strip()
 
     # --- Таблица характеристик ---
-    table = soup.select_one("#root > main > section > main > article:nth-child(2) > table")
+    table = soup.select_one("#root main section main article:nth-child(2) table")
     if table:
         for tr in table.select("tbody > tr"):
             cells = tr.find_all("td")
@@ -97,29 +106,23 @@ async def fetch_ratings_from_corpbonds(code: str, is_ofz: bool = False):
 
             if "тип купона" in key:
                 ratings["coupon_type"] = val
-
             elif any(k in key for k in ["ставка купона", "процентная ставка", "плавающая ставка"]):
-                # Проверяем само значение
                 if _looks_like_formula(val):
                     ratings["coupon_rate"] = val
                 else:
-                    # Ищем формулу внутри ячейки (<p>)
                     for p in cells[1].select("p"):
                         txt = _norm(p.get_text())
                         if _looks_like_formula(txt):
                             ratings["coupon_rate"] = txt
                             break
-                    # Если <p> нет или не нашли — пробуем по <br> или \n
                     if not ratings["coupon_rate"]:
                         for part in val.split("\n"):
                             if _looks_like_formula(part):
                                 ratings["coupon_rate"] = _norm(part)
                                 break
-
             elif "валюта" in key:
                 ratings["currency"] = _norm(val)
 
-    # --- Fallback: ищем формулу по всему документу ---
     if not ratings["coupon_rate"]:
         for p in soup.select("p.val"):
             txt = _norm(p.get_text())

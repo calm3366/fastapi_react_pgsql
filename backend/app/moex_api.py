@@ -1,8 +1,8 @@
 # backend/app/moex_api.py
-import httpx, hashlib, requests
+import httpx, hashlib, requests, logging
 from fastapi import APIRouter, Query
 from typing import Optional, Any, Dict, Tuple, List
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas import BondOut
 
@@ -11,32 +11,7 @@ router = APIRouter()
 BASE_MARKET_URL = "https://iss.moex.com/iss/engines/stock/markets/{market}/securities.json"
 APIRouter()
 
-def get_bond_prices_from_moex(secid: str):
-    url = f"https://iss.moex.com/iss/history/engines/stock/markets/bonds/securities/{secid}.json"
-    resp = requests.get(url)
-    if resp.status_code != 200:
-        return []
-
-    data = resp.json()
-    if "history" not in data or "data" not in data["history"]:
-        return []
-
-    columns = data["history"]["columns"]
-    idx_date = columns.index("TRADEDATE")
-    idx_price = columns.index("CLOSE")
-
-    prices = []
-    for row in data["history"]["data"]:
-        try:
-            prices.append({
-                "date": datetime.strptime(row[idx_date], "%Y-%m-%d").date(),
-                "price": float(row[idx_price]),
-                "secid": secid
-            })
-        except (ValueError, TypeError):
-            continue
-
-    return prices
+logger = logging.getLogger(__name__)
 
 async def _search_bonds_by_markets(query: str) -> List[Dict]:
     markets = ["bonds", "corporate_bonds", "municipal_bonds", "subfederal_bonds", "ofz"]
@@ -125,67 +100,138 @@ async def _search_bonds_by_markets(query: str) -> List[Dict]:
     print(f"DEBUG: found {len(results)} bonds total")
     return results
 
-async def upsert_bond(session: AsyncSession, sec: dict):
-    stmt = insert(Bond).values(**sec).on_conflict_do_update(
-        index_elements=["secid"],
-        set_=sec
+
+
+# универсальный помощник при некорректном соединении
+async def _safe_request(url: str) -> dict | None:
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            return r.json()
+    except httpx.RequestError as e:
+        logger.warning(f"Сетевая ошибка при запросе {url}: {e}")
+    except httpx.HTTPStatusError as e:
+        logger.warning(f"MOEX вернул {e.response.status_code} для {url}")
+    except Exception as e:
+        logger.warning(f"Неожиданная ошибка при запросе {url}: {e}")
+    return None
+
+
+
+# --- утилиты для получения цены открытия ---
+async def get_day_open(secid: str) -> float | None:
+    # 1. Сначала пробуем marketdata (актуальные данные за сегодня)
+    url = f"https://iss.moex.com/iss/engines/stock/markets/bonds/securities/{secid}.json"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        logger.warning(f"Ошибка запроса marketdata для {secid}: {e}")
+        data = None
+
+    if data:
+        try:
+            rows = data.get("marketdata", {}).get("data", [])
+            cols = data.get("marketdata", {}).get("columns", [])
+            if rows:
+                open_idx = cols.index("OPEN")
+                face_idx = cols.index("FACEVALUE") if "FACEVALUE" in cols else None
+                raw_open = rows[0][open_idx]
+                if raw_open is not None:
+                    facevalue = rows[0][face_idx] if face_idx is not None else 1000
+                    return float(raw_open) * float(facevalue or 1000) / 100.0
+        except Exception as e:
+            logger.warning(f"Ошибка парсинга marketdata для {secid}: {e}")
+
+    # 2. Если marketdata пусто — ищем последний торговый день в history
+    for i in range(5):  # проверим последние 5 дней
+        d = date.today() - timedelta(days=i)
+        url = (
+            f"https://iss.moex.com/iss/history/engines/stock/markets/bonds/"
+            f"securities/{secid}.json?from={d}&till={d}"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                data = r.json()
+        except Exception as e:
+            logger.warning(f"Ошибка запроса history для {secid} ({d}): {e}")
+            continue
+
+        try:
+            rows = data.get("history", {}).get("data", [])
+            cols = data.get("history", {}).get("columns", [])
+            if not rows:
+                continue
+            open_idx = cols.index("OPEN")
+            face_idx = cols.index("FACEVALUE") if "FACEVALUE" in cols else None
+            raw_open = rows[0][open_idx]
+            if raw_open is None:
+                continue
+            facevalue = rows[0][face_idx] if face_idx is not None else 1000
+            return float(raw_open) * float(facevalue or 1000) / 100.0
+        except Exception as e:
+            logger.warning(f"Ошибка парсинга history для {secid} ({d}): {e}")
+            continue
+
+    return None
+
+
+async def get_week_month_open(secid: str, from_date: date) -> float | None:
+    url = (
+        f"https://iss.moex.com/iss/history/engines/stock/markets/bonds/"
+        f"securities/{secid}.json?from={from_date}&till={from_date}"
     )
-    await session.execute(stmt)
-
-def _apply_filters(sec, filters):
-    if filters["coupon_from"] is not None and sec["coupon"] < filters["coupon_from"]:
-        return False
-    if filters["coupon_to"] is not None and sec["coupon"] > filters["coupon_to"]:
-        return False
-    if filters["maturity_from"] and sec["maturity_date"] < filters["maturity_from"]:
-        return False
-    if filters["maturity_to"] and sec["maturity_date"] > filters["maturity_to"]:
-        return False
-    if filters["rating"] and sec.get("rating") != filters["rating"]:
-        return False
-    return True
-
-# ─── ПАРАМЕТРЫ КЭША ───────────────────────
-CACHE_TTL = 600       # сек (10 минут)
-CACHE_MAXSIZE = 1000  # макс. записей
-
-# ─── СТРУКТУРА КЭША ───────────────────────
-# ключ -> (timestamp_expire, value)
-_cache: Dict[str, Tuple[float, Any]] = {}
-
-def _make_key(query: str, params: dict) -> str:
-    """
-    Формирует хеш-ключ по запросу и всем параметрам.
-    """
-    src = f"{query}|{sorted(params.items())}"
-    return hashlib.sha1(src.encode()).hexdigest()
-
-def _get_from_cache(key: str) -> Any:
-    """
-    Возвращает value из кэша или None, если нет / просрочено.
-    """
-    entry = _cache.get(key)
-    if not entry:
+    data = await _safe_request(url)
+    if not data:
         return None
-    expire_at, val = entry
-    if time.time() > expire_at:
-        del _cache[key]
+
+    try:
+        rows = data.get("history", {}).get("data", [])
+        cols = data.get("history", {}).get("columns", [])
+        if not rows:
+            return None
+        open_idx = cols.index("OPEN")
+        face_idx = cols.index("FACEVALUE") if "FACEVALUE" in cols else None
+        raw_open = rows[0][open_idx]
+        if raw_open is None:
+            return None
+        facevalue = rows[0][face_idx] if face_idx is not None else 1000
+        return float(raw_open) * float(facevalue or 1000) / 100.0
+    except Exception as e:
+        logger.warning(f"Ошибка парсинга week/month_open для {secid}: {e}")
         return None
-    return val
 
-def _set_to_cache(key: str, value: Any) -> None:
-    """
-    Ставит в кэш, очищая самый старый при переполнении.
-    """
-    # уборка просроченных
-    now = time.time()
-    for k, (exp, _) in list(_cache.items()):
-        if exp < now:
-            del _cache[k]
 
-    if len(_cache) >= CACHE_MAXSIZE:
-        # удаляем случайный (или самый старый) элемент
-        oldest = min(_cache.items(), key=lambda i: i[1][0])[0]
-        del _cache[oldest]
-
-    _cache[key] = (now + CACHE_TTL, value)
+async def get_year_open(secid: str, year: int) -> float | None:
+    first_day = date(year, 1, 1)
+    # ищем ближайший торговый день вперёд
+    for i in range(10):
+        d = first_day + timedelta(days=i)
+        url = (
+            f"https://iss.moex.com/iss/history/engines/stock/markets/bonds/"
+            f"securities/{secid}.json?from={d}&till={d}"
+        )
+        data = await _safe_request(url)
+        if not data:
+            continue
+        try:
+            rows = data.get("history", {}).get("data", [])
+            cols = data.get("history", {}).get("columns", [])
+            if not rows:
+                continue
+            open_idx = cols.index("OPEN")
+            face_idx = cols.index("FACEVALUE") if "FACEVALUE" in cols else None
+            raw_open = rows[0][open_idx]
+            if raw_open is None:
+                continue
+            facevalue = rows[0][face_idx] if face_idx is not None else 1000
+            return float(raw_open) * float(facevalue or 1000) / 100.0
+        except Exception as e:
+            logger.warning(f"Ошибка парсинга year_open для {secid} ({d}): {e}")
+            continue
+    return None

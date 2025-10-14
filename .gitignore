@@ -1,0 +1,24 @@
+# Секреты
+.env
+
+# Временные файлы
+*.log
+*.tmp
+*.swp
+
+# Конкретные файлы
+promt.txt
+backend/app/main.py
+
+# Python
+__pycache__/
+*.pyc
+
+# MacOS
+.DS_Store
+
+# Миграции
+migrations/
+
+# Opensearch
+opensearch/

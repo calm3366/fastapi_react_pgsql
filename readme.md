@@ -79,3 +79,6 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 - Миграции сохраняются в backend/migrations (монтируется в контейнер).
 - Переменные окружения React подхватываются при сборке. После изменения .env перезапустите npm start или пересоберите Docker-контейнер.
 - CORS на бэкенде настраивается в main.py через CORSMiddleware.
+
+
+#### за backend/app/main.py в ЛС :)
