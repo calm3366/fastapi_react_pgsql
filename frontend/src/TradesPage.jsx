@@ -1,7 +1,7 @@
 // frontend/src/TradesPage.jsx
 import React, { useState, useEffect } from "react";
 
-export default function TradesPage({ addLog, loadSummary, loadBonds }) {
+export default function TradesPage({ addLog, loadSummary, loadBonds, loadPositions, loadCoupons }) {
   const [trades, setTrades] = useState([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [tradeToDelete, setTradeToDelete] = useState(null);
@@ -18,6 +18,7 @@ export default function TradesPage({ addLog, loadSummary, loadBonds }) {
       await loadTrades();
       await loadSummary();
       await loadBonds();
+      await loadPositions();   // 🔹 обновляем позиции для VolumePanel
       addLog(
         `Добавлена сделка по ${
           tradeData.bond_name || tradeData.bond?.name || tradeData.bond_id
@@ -52,6 +53,8 @@ export default function TradesPage({ addLog, loadSummary, loadBonds }) {
 
       await loadTrades();
       await loadSummary();
+      await loadPositions();   // 🔹 обновляем позиции после удаления
+      if (loadCoupons) await loadCoupons(); // 🔹 обновляем купоны
       addLog(`Удалена сделка по ${tradeToDelete.bond?.name ?? tradeToDelete.id}`);
     } catch (err) {
       console.error("Ошибка удаления сделки", err);

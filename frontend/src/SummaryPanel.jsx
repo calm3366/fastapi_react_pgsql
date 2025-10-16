@@ -112,7 +112,7 @@ export default function SummaryPanel({
         </span>
       </div>
       <div className="summary-item">
-        <label>% от прибыли:</label>
+        <label>% прибыли:</label>
         <span style={{ color: getPercentColor(profitPercent) }}>
           {formatNum(profitPercent)}%
         </span>

@@ -26,33 +26,43 @@ export default function App() {
   const [profitPercent, setProfitPercent] = useState(0);
   const [positions, setPositions] = useState([]);
   const [showRGBI, setShowRGBI] = useState(false);
-  
+  const [coupons, setCoupons] = useState([]);
+
+  const loadCoupons = async () => {
+    try {
+      const res = await fetch("/coupons");
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      setCoupons(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Ошибка загрузки купонов", err);
+    }
+  };
 
   // Загружаем список облигаций
   const loadBonds = async () => {
-    try {
-      const res = await fetch("/bonds");
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
-      setBonds(data);
-    } catch (err) {
-      console.error("Ошибка загрузки облигаций", err);
-    }
-  };
+      try {
+        const res = await fetch("/bonds");
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        setBonds([...data]); // 🔹 новый массив
+      } catch (err) {
+        console.error("Ошибка загрузки облигаций", err);
+      }
+    };
   // Загружаем позиции (сделки)
   const loadPositions = async () => {
-    try {
-      const res = await fetch("/positions"); // эндпоинт с позициями
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
-      setPositions(data);
-    } catch (err) {
-      console.error("Ошибка загрузки позиций", err);
-    }
-  };
+      try {
+        const res = await fetch("/positions");
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        setPositions(data.map(p => ({ ...p }))); // 🔹 новые объекты
+      } catch (err) {
+        console.error("Ошибка загрузки позиций", err);
+      }
+    };
 
   const API_URL = process.env.REACT_APP_API_URL || "";
-  // console.log("🔌 API_URL =", API_URL);
 
   useEffect(() => {
     loadBonds();
@@ -184,18 +194,19 @@ export default function App() {
 
   // объединяем данные (для структуры портфеля)
   const enrichedBonds = useMemo(() => {
-    if (!bonds || !positions) return [];
+      if (!bonds || !positions) return [];
 
-    const qtyMap = positions.reduce((acc, p) => {
-      acc[p.bond_id] = (acc[p.bond_id] ?? 0) + p.buy_qty;
-      return acc;
-    }, {});
+      const qtyMap = positions.reduce((acc, p) => {
+        acc[p.bond_id] = (acc[p.bond_id] ?? 0) + (p.buy_qty ?? 0);
+        return acc;
+      }, {});
 
-    return bonds.map(b => ({
-      ...b,
-      buy_qty: qtyMap[b.id] ?? 0
-    }));
-  }, [bonds, positions]);
+      return bonds.map(b => ({
+        ...b,
+        buy_qty: qtyMap[b.id] ?? 0  
+      }));
+    }, [bonds, positions]);
+
 
   return (
     <div className="dashboard">
@@ -213,6 +224,8 @@ export default function App() {
           addLog={addLog}
           loadSummary={loadSummary}
           onToggleRGBI={setShowRGBI} 
+          loadPositions={loadPositions}
+          loadCoupons={loadCoupons}
         />
       </div>
       <VolumePanel bonds={enrichedBonds} /> 
@@ -232,10 +245,10 @@ export default function App() {
         />
       <div className="bottom-panel"> 
         <div className="left-panel">
-          <TradesPage addLog={addLog} loadSummary={loadSummary} loadBonds={loadBonds}/>
+          <TradesPage addLog={addLog} loadSummary={loadSummary} loadBonds={loadBonds} loadPositions={loadPositions} loadCoupons={loadCoupons}/>
         </div>
         <div className="center-panel">
-          <CouponsPage bonds={bonds} />
+          <CouponsPage bonds={bonds} coupons={coupons} loadCoupons={loadCoupons}/>
         </div>
         <div className="logs-wrapper">
           <LogsPage logs={logs} />

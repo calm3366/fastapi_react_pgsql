@@ -17,7 +17,7 @@ export default function VolumePanel({ bonds }) {
   useEffect(() => {
     let t;
     if (showChart) {
-      // ждём завершения slideDown (300 мс), затем маунтим Pie
+      // ждём завершения slideDown (300 мс), затем маунтим Pie 
       t = setTimeout(() => setPieReady(true), 300);
     } else {
       setPieReady(false);

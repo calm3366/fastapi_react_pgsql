@@ -131,6 +131,8 @@ export default function BondsPage({...props}) {
       showToast('Сделка успешно сохранена', 'success');
       // 🔹 пересчёт сводки
       if (loadSummary) loadSummary();
+      if (props.loadPositions) await props.loadPositions();
+      if (props.loadCoupons) await props.loadCoupons();
       
       // 🔹 Сообщаем всем, что сделки обновились
       window.dispatchEvent(new Event('trades-updated'));

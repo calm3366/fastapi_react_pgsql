@@ -1,15 +1,11 @@
 // frontend/src/CouponsPage.jsx
 import React, { useEffect, useState, useRef } from "react";
 
-export default function CouponsPage() {
-  const [coupons, setCoupons] = useState([]);
+export default function CouponsPage({ coupons, loadCoupons }) {
   const listRef = useRef(null);
 
   useEffect(() => {
-    fetch("http://localhost:8010/coupons")
-      .then((res) => res.json())
-      .then((data) => setCoupons(Array.isArray(data) ? data : []))
-      .catch((err) => console.error("Ошибка загрузки купонов:", err));
+    loadCoupons();
   }, []);
 
   useEffect(() => {
