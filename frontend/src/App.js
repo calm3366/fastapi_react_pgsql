@@ -1,5 +1,7 @@
 // frontend/src/App.js
 import React, { useState, useEffect, useMemo } from "react";
+import { apiFetch } from "./api";
+import { useToastContext } from "./hooks";
 import BondsPage from "./BondsPage";
 import CouponsPage from "./CouponsPage";
 import LogsPage from "./LogsPage";
@@ -7,8 +9,8 @@ import TradesPage from "./TradesPage";
 import SummaryPanel from "./SummaryPanel";
 import VolumePanel from "./VolumePanel";
 import RGBIChart from "./RGBIChart";
+import FxRatesPanel from "./FxRatesPanel";
 import "./index.css";
-
 
 export default function App() {
   const [query, setQuery]     = useState("");
@@ -27,82 +29,79 @@ export default function App() {
   const [positions, setPositions] = useState([]);
   const [showRGBI, setShowRGBI] = useState(false);
   const [coupons, setCoupons] = useState([]);
+  const { showToast } = useToastContext();
 
   const loadCoupons = async () => {
     try {
-      const res = await fetch("/coupons");
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
+      const data = await apiFetch("/coupons");
       setCoupons(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Ошибка загрузки купонов", err);
+      showToast(err instanceof Error ? err.message : "Ошибка загрузки купонов", "error");
     }
   };
 
   // Загружаем список облигаций
   const loadBonds = async () => {
-      try {
-        const res = await fetch("/bonds");
-        if (!res.ok) throw new Error(res.statusText);
-        const data = await res.json();
-        setBonds([...data]); // 🔹 новый массив
-      } catch (err) {
-        console.error("Ошибка загрузки облигаций", err);
-      }
-    };
+    try {
+      const data = await apiFetch("/bonds");
+      setBonds(Array.isArray(data) ? [...data] : []);
+    } catch (err) {
+      console.error("Ошибка загрузки облигаций", err);
+      showToast(err instanceof Error ? err.message : "Ошибка загрузки облигаций", "error");
+    }
+  };
+
   // Загружаем позиции (сделки)
   const loadPositions = async () => {
-      try {
-        const res = await fetch("/positions");
-        if (!res.ok) throw new Error(res.statusText);
-        const data = await res.json();
-        setPositions(data.map(p => ({ ...p }))); // 🔹 новые объекты
-      } catch (err) {
-        console.error("Ошибка загрузки позиций", err);
-      }
-    };
-
-  const API_URL = process.env.REACT_APP_API_URL || "";
+    try {
+      const data = await apiFetch("/positions");
+      setPositions(Array.isArray(data) ? data.map(p => ({ ...p })) : []);
+    } catch (err) {
+      console.error("Ошибка загрузки позиций", err);
+      showToast(err instanceof Error ? err.message : "Ошибка загрузки позиций", "error");
+    }
+  };
 
   useEffect(() => {
-    loadBonds();
-    loadPositions();
-    fetch(`${API_URL}/logs`)
-      .then(res => res.json())
-      .then(setLogs)
-      .catch(err => console.error("Ошибка загрузки логов", err));
-    loadSummary();
+    (async () => {
+      await Promise.all([loadBonds(), loadPositions(), loadCoupons()]);
+      try {
+        const logsData = await apiFetch("/logs");
+        setLogs(Array.isArray(logsData) ? logsData : []);
+      } catch (err) {
+        console.error("Ошибка загрузки логов", err);
+        showToast(err instanceof Error ? err.message : "Ошибка загрузки логов", "error");
+      }
+      await loadSummary();
+    })();
+    // пустой массив — запуск один раз при монтировании
   }, []);
 
   const addLog = async (msg) => {
     try {
-      const res = await fetch(`${API_URL}/logs`, {
+      const saved = await apiFetch(`/logs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: msg }),
       });
-      if (!res.ok) throw new Error(res.statusText);
-      const saved = await res.json();
-
       const logObj = {
         id: saved.id ?? Date.now(),
         timestamp: saved.timestamp ?? new Date().toISOString(),
         message: saved.message ?? msg,
       };
-
-      setLogs(prev => [logObj, ...prev]); // 🔹 обновляем локальный список
+      setLogs(prev => [logObj, ...prev]);
     } catch (e) {
       console.error("POST /logs failed", e);
+      showToast(e instanceof Error ? e.message : "Ошибка логирования", "error");
     }
   };
-
 
   const handleSearch = async () => {
     if (!query.trim()) return;
     try {
-      const res = await fetch("/search_bonds?query=" + encodeURIComponent(query));
-      if (!res.ok) throw new Error(res.statusText);
-      setResults(await res.json());
+      const data = await apiFetch("/search_bonds?query=" + encodeURIComponent(query));
+      setResults(Array.isArray(data) ? data : []);
       addLog(`Поиск: ${query}`);
     } catch (e) {
       console.error("GET /search_bonds failed", e);
@@ -112,12 +111,11 @@ export default function App() {
 
   const handleAdd = async (secid) => {
     try {
-      const res = await fetch("/bonds", {
+      await apiFetch("/bonds", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ secid }),
       });
-      if (!res.ok) throw new Error(res.statusText);
       await loadBonds();
       setResults([]);
       setQuery("");
@@ -132,40 +130,85 @@ export default function App() {
   const [errorModalMessage, setErrorModalMessage] = useState("");
 
   const handleDeleteSelected = async (ids) => {
-    try {
-      const res = await fetch("/bonds", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
+      try {
+        const res = await fetch("/bonds", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
 
-      if (!res.ok) {
-        const errData = await res.json();
-        setErrorModalMessage(errData.detail || "Ошибка удаления");
+        if (res.ok) {
+          // успешно
+          setBonds(prev => prev.filter(b => !ids.includes(b.id)));
+          addLog(`Удалено ${ids.length} облигаций`);
+          return;
+        }
+
+        // если ошибка — попробуем прочитать тело и разобрать detail
+        const contentType = res.headers.get("content-type") || "";
+        let body = null;
+        try {
+          if (contentType.includes("application/json")) {
+            body = await res.json();
+          } else {
+            const text = await res.text();
+            // попробуем распарсить JSON из текста на случай, если сервер вернул JSON как строку
+            try { body = JSON.parse(text); } catch { body = text; }
+          }
+        } catch (readErr) {
+          body = null;
+        }
+
+        // Сформируем читаемое сообщение для пользователя
+        let userMessage = `Ошибка ${res.status}`;
+        if (body) {
+          if (typeof body === "string") {
+            userMessage = body;
+          } else if (typeof body === "object") {
+            if (typeof body.detail === "string") {
+              userMessage = body.detail;
+            } else if (typeof body.detail === "object") {
+              userMessage = body.detail.message || JSON.stringify(body.detail);
+              if (Array.isArray(body.detail.blocked) && body.detail.blocked.length) {
+                const list = body.detail.blocked
+                  .map(it => {
+                    const id = it.bond_id ?? it.id ?? it[0];
+                    const cnt = it.trades ?? it.cnt ?? it[1];
+                    return `· id=${id}${typeof cnt !== "undefined" ? ` — ${cnt} сделок` : ""}`;
+                  })
+                  .join("\n");
+                userMessage += "\n\nЗаблокировано для удаления:\n" + list;
+              }
+            } else if (body.message) {
+              userMessage = body.message;
+            } else {
+              userMessage = JSON.stringify(body);
+            }
+          }
+        } else {
+          userMessage = `Ошибка ${res.status} при удалении`;
+        }
+
+        setErrorModalMessage(userMessage);
         setErrorModalOpen(true);
-        return;
-      }
 
-      setBonds(prev => prev.filter(b => !ids.includes(b.id)));
-      addLog(`Удалено ${ids.length} облигаций`);
-    } catch (e) {
-      console.error("DELETE /bonds failed", e);
-      setErrorModalMessage("Ошибка удаления");
-      setErrorModalOpen(true);
-    }
-  };
+      } catch (e) {
+        console.error("DELETE /bonds failed", e);
+        setErrorModalMessage(e?.message || "Ошибка удаления");
+        setErrorModalOpen(true);
+      }
+    };
+
+
 
   const handleRefreshAll = async () => {
     try {
-      const res = await fetch("/bonds", {
+      const updated = await apiFetch("/bonds", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [] }),
       });
-      if (!res.ok) throw new Error(res.statusText);
-      const updated = await res.json();
-      setBonds(updated);
-
+      setBonds(Array.isArray(updated) ? updated : []);
       const now = new Date().toISOString();
       setLastUpdateTime(now);
       localStorage.setItem("lastUpdateTime", now);
@@ -176,40 +219,36 @@ export default function App() {
     }
   };
 
-    const loadSummary = async () => {
-      try {
-        const res = await fetch("/api/portfolio_summary");
-        if (!res.ok) throw new Error(res.statusText);
-        const data = await res.json();
-        setInvested(data.invested ?? 0);
-        setTradesSum(data.trades_sum ?? 0);
-        setCouponProfit(data.coupon_profit ?? 0);
-        setCurrentValue(data.current_value ?? 0);
-        setTotalValue(data.total_value ?? 0);
-        setProfitPercent(data.profit_percent ?? 0);
-      } catch (err) {
-        console.error("Ошибка загрузки сводки", err);
-      }
-    };
+  const loadSummary = async () => {
+    try {
+      const data = await apiFetch("/api/portfolio_summary");
+      setInvested(data.invested ?? 0);
+      setTradesSum(data.trades_sum ?? 0);
+      setCouponProfit(data.coupon_profit ?? 0);
+      setCurrentValue(data.current_value ?? 0);
+      setTotalValue(data.total_value ?? 0);
+      setProfitPercent(data.profit_percent ?? 0);
+    } catch (err) {
+      console.error("Ошибка загрузки сводки", err);
+      showToast(err instanceof Error ? err.message : "Ошибка загрузки сводки", "error");
+    }
+  };
 
-  // объединяем данные (для структуры портфеля)
   const enrichedBonds = useMemo(() => {
-      if (!bonds || !positions) return [];
-
-      const qtyMap = positions.reduce((acc, p) => {
-        acc[p.bond_id] = (acc[p.bond_id] ?? 0) + (p.buy_qty ?? 0);
-        return acc;
-      }, {});
-
-      return bonds.map(b => ({
-        ...b,
-        buy_qty: qtyMap[b.id] ?? 0  
-      }));
-    }, [bonds, positions]);
-
+    if (!bonds || !positions) return [];
+    const qtyMap = positions.reduce((acc, p) => {
+      acc[p.bond_id] = (acc[p.bond_id] ?? 0) + (p.buy_qty ?? 0);
+      return acc;
+    }, {});
+    return bonds.map(b => ({
+      ...b,
+      buy_qty: qtyMap[b.id] ?? 0
+    }));
+  }, [bonds, positions]);
 
   return (
     <div className="dashboard">
+      <FxRatesPanel />
       <div className="up-panel">
         <BondsPage
           query={query}
@@ -223,37 +262,39 @@ export default function App() {
           lastUpdateTime={lastUpdateTime}
           addLog={addLog}
           loadSummary={loadSummary}
-          onToggleRGBI={setShowRGBI} 
+          onToggleRGBI={setShowRGBI}
           loadPositions={loadPositions}
           loadCoupons={loadCoupons}
+          loadBonds={loadBonds}
         />
       </div>
-      <VolumePanel bonds={enrichedBonds} /> 
+      <VolumePanel bonds={enrichedBonds} />
       <SummaryPanel
-          invested={invested}
-          setInvested={setInvested}
-          tradesSum={tradesSum}
-          setTradesSum={setTradesSum}
-          couponProfit={couponProfit}
-          setCouponProfit={setCouponProfit}
-          currentValue={currentValue}
-          setCurrentValue={setCurrentValue}
-          totalValue={totalValue}
-          setTotalValue={setTotalValue}
-          profitPercent={profitPercent}
-          setProfitPercent={setProfitPercent}
-        />
-      <div className="bottom-panel"> 
+        invested={invested}
+        setInvested={setInvested}
+        tradesSum={tradesSum}
+        setTradesSum={setTradesSum}
+        couponProfit={couponProfit}
+        setCouponProfit={setCouponProfit}
+        currentValue={currentValue}
+        setCurrentValue={setCurrentValue}
+        totalValue={totalValue}
+        setTotalValue={setTotalValue}
+        profitPercent={profitPercent}
+        setProfitPercent={setProfitPercent}
+      />
+      <div className="bottom-panel">
         <div className="left-panel">
-          <TradesPage addLog={addLog} loadSummary={loadSummary} loadBonds={loadBonds} loadPositions={loadPositions} loadCoupons={loadCoupons}/>
+          <TradesPage addLog={addLog} loadSummary={loadSummary} loadBonds={loadBonds} loadPositions={loadPositions} loadCoupons={loadCoupons} />
         </div>
         <div className="center-panel">
-          <CouponsPage bonds={bonds} coupons={coupons} loadCoupons={loadCoupons}/>
+          <CouponsPage bonds={bonds} coupons={coupons} loadCoupons={loadCoupons} />
         </div>
         <div className="logs-wrapper">
           <LogsPage logs={logs} />
         </div>
       </div>
+
       {errorModalOpen && (
         <div style={{
           position: 'fixed',
@@ -277,20 +318,18 @@ export default function App() {
           </div>
         </div>
       )}
+
       {showRGBI && (
-        <div
-          className="rgbi-backdrop"
-        >
+        <div className="rgbi-backdrop">
           <div
             className="rgbi-overlay"
-            onClick={(e) => e.stopPropagation()} // клик внутри не закрывает
+            onClick={(e) => e.stopPropagation()}
             onMouseLeave={() => setShowRGBI(false)}
           >
             <RGBIChart />
           </div>
         </div>
       )}
-
     </div>
   );
 }

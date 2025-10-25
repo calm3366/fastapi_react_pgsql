@@ -6,31 +6,37 @@ services:
       - .env
     volumes:
       - db_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h localhost -p 5432"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${BONDS_DB} -h localhost -p 5432"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   frontend:
-    image: node:18-alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     working_dir: /frontend
     volumes:
-      - frontend_data:/frontend/node_modules
       - ./frontend:/frontend
+      - /frontend/node_modules # анонимный volume, чтобы не затирать
     ports:
-      - "3000:3000"
-    command: sh -c "npm install && npm start"
+      - "80:3000"
     env_file:
       - .env
+    restart: unless-stopped
+    stop_grace_period: 30s
+    tty: true
+    stdin_open: true
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      test: ["CMD-SHELL", "curl -f --silent http://127.0.0.1:3000/ || exit 1"]
       interval: 5s
-      timeout: 2s
-      retries: 30
-      start_period: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     depends_on:
       - backend
 
@@ -54,6 +60,48 @@ services:
       - ./backend/dev-entrypoint.sh:/dev-entrypoint.sh:cached
     command: /dev-entrypoint.sh
 
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    env_file:
+      - .env
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=${POSTGRES_HOST}
+      - DB_POSTGRESDB_PORT=${POSTGRES_PORT}
+      - DB_POSTGRESDB_DATABASE=${N8N_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      - N8N_HOST=n8n.local
+      - N8N_PORT=5678
+      - WEBHOOK_TUNNEL_URL=${WEBHOOK_TUNNEL_URL}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      db:
+        condition: service_healthy
+
+  log-watcher:
+    build: ./log-watcher
+    depends_on:
+      - backend
+      - n8n
+    env_file:
+      - .env
+    environment:
+      - CONTAINER_NAME=${CONTAINER_NAME}
+      - N8N_WEBHOOK=${N8N_WEBHOOK}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
 volumes:
   db_data:
   frontend_data:
+  n8n_data:

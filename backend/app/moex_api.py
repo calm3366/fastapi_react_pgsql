@@ -1,17 +1,14 @@
 # backend/app/moex_api.py
 import httpx, hashlib, requests, logging
 from fastapi import APIRouter, Query
-from typing import Optional, Any, Dict, Tuple, List
+from typing import Optional, Any, Dict, Tuple, List, Iterable
 from datetime import date, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas import BondOut
-
-router = APIRouter()
+from statistics import median
 
 BASE_MARKET_URL = "https://iss.moex.com/iss/engines/stock/markets/{market}/securities.json"
-APIRouter()
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("app.moex_open")
 
 async def _search_bonds_by_markets(query: str) -> List[Dict]:
     markets = ["bonds", "corporate_bonds", "municipal_bonds", "subfederal_bonds", "ofz"]
@@ -100,138 +97,18 @@ async def _search_bonds_by_markets(query: str) -> List[Dict]:
     print(f"DEBUG: found {len(results)} bonds total")
     return results
 
-
-
-# универсальный помощник при некорректном соединении
-async def _safe_request(url: str) -> dict | None:
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-            return r.json()
-    except httpx.RequestError as e:
-        logger.warning(f"Сетевая ошибка при запросе {url}: {e}")
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"MOEX вернул {e.response.status_code} для {url}")
-    except Exception as e:
-        logger.warning(f"Неожиданная ошибка при запросе {url}: {e}")
-    return None
-
-
-
-# --- утилиты для получения цены открытия ---
-async def get_day_open(secid: str) -> float | None:
-    # 1. Сначала пробуем marketdata (актуальные данные за сегодня)
-    url = f"https://iss.moex.com/iss/engines/stock/markets/bonds/securities/{secid}.json"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-            data = r.json()
-    except Exception as e:
-        logger.warning(f"Ошибка запроса marketdata для {secid}: {e}")
-        data = None
-
-    if data:
-        try:
-            rows = data.get("marketdata", {}).get("data", [])
-            cols = data.get("marketdata", {}).get("columns", [])
-            if rows:
-                open_idx = cols.index("OPEN")
-                face_idx = cols.index("FACEVALUE") if "FACEVALUE" in cols else None
-                raw_open = rows[0][open_idx]
-                if raw_open is not None:
-                    facevalue = rows[0][face_idx] if face_idx is not None else 1000
-                    return float(raw_open) * float(facevalue or 1000) / 100.0
-        except Exception as e:
-            logger.warning(f"Ошибка парсинга marketdata для {secid}: {e}")
-
-    # 2. Если marketdata пусто — ищем последний торговый день в history
-    for i in range(5):  # проверим последние 5 дней
-        d = date.today() - timedelta(days=i)
-        url = (
-            f"https://iss.moex.com/iss/history/engines/stock/markets/bonds/"
-            f"securities/{secid}.json?from={d}&till={d}"
-        )
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(url)
-                r.raise_for_status()
-                data = r.json()
-        except Exception as e:
-            logger.warning(f"Ошибка запроса history для {secid} ({d}): {e}")
-            continue
-
-        try:
-            rows = data.get("history", {}).get("data", [])
-            cols = data.get("history", {}).get("columns", [])
-            if not rows:
-                continue
-            open_idx = cols.index("OPEN")
-            face_idx = cols.index("FACEVALUE") if "FACEVALUE" in cols else None
-            raw_open = rows[0][open_idx]
-            if raw_open is None:
-                continue
-            facevalue = rows[0][face_idx] if face_idx is not None else 1000
-            return float(raw_open) * float(facevalue or 1000) / 100.0
-        except Exception as e:
-            logger.warning(f"Ошибка парсинга history для {secid} ({d}): {e}")
-            continue
-
-    return None
-
-
-async def get_week_month_open(secid: str, from_date: date) -> float | None:
-    url = (
-        f"https://iss.moex.com/iss/history/engines/stock/markets/bonds/"
-        f"securities/{secid}.json?from={from_date}&till={from_date}"
-    )
-    data = await _safe_request(url)
-    if not data:
-        return None
-
-    try:
-        rows = data.get("history", {}).get("data", [])
-        cols = data.get("history", {}).get("columns", [])
-        if not rows:
-            return None
-        open_idx = cols.index("OPEN")
-        face_idx = cols.index("FACEVALUE") if "FACEVALUE" in cols else None
-        raw_open = rows[0][open_idx]
-        if raw_open is None:
-            return None
-        facevalue = rows[0][face_idx] if face_idx is not None else 1000
-        return float(raw_open) * float(facevalue or 1000) / 100.0
-    except Exception as e:
-        logger.warning(f"Ошибка парсинга week/month_open для {secid}: {e}")
-        return None
-
-
-async def get_year_open(secid: str, year: int) -> float | None:
-    first_day = date(year, 1, 1)
-    # ищем ближайший торговый день вперёд
-    for i in range(10):
-        d = first_day + timedelta(days=i)
-        url = (
-            f"https://iss.moex.com/iss/history/engines/stock/markets/bonds/"
-            f"securities/{secid}.json?from={d}&till={d}"
-        )
-        data = await _safe_request(url)
-        if not data:
-            continue
-        try:
-            rows = data.get("history", {}).get("data", [])
-            cols = data.get("history", {}).get("columns", [])
-            if not rows:
-                continue
-            open_idx = cols.index("OPEN")
-            face_idx = cols.index("FACEVALUE") if "FACEVALUE" in cols else None
-            raw_open = rows[0][open_idx]
-            if raw_open is None:
-                continue
-            facevalue = rows[0][face_idx] if face_idx is not None else 1000
-            return float(raw_open) * float(facevalue or 1000) / 100.0
-        except Exception as e:
-            logger.warning(f"Ошибка парсинга year_open для {secid} ({d}): {e}")
-            continue
+# поиск значения НКД
+def parse_nkd_from_rec(rec):
+    # возможные ключи: ACCRUEDINT, ACCRUEDINTPERCENT, ACCRUEDINTPRICE
+    for key in ("ACCRUEDINT", "ACCRUEDINTPRICE", "ACCRUEDINTPERCENT", "accruedint"):
+        v = rec.get(key)
+        if v is not None and v != "":
+            try:
+                return float(v)
+            except Exception:
+                # возможно строка с пробелами или символами — попытка очистки
+                try:
+                    return float(str(v).replace(",", ".").strip())
+                except Exception:
+                    continue
     return None

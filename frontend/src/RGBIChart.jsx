@@ -1,15 +1,10 @@
 // frontend/src/RGBIChart.jsx
 import React, { useState, useEffect } from "react";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  ResponsiveContainer,
-  ReferenceDot, 
+  LineChart, Line, XAxis, YAxis, Tooltip,
+  CartesianGrid, ResponsiveContainer
 } from "recharts";
+import { externalFetch } from "./api";   
 
 function toMidnightTs(ts) {
   const d = new Date(ts);
@@ -43,10 +38,7 @@ async function fetchRGBIData({ from, to, limit = 500 }) {
     url.searchParams.set("start", start);
     url.searchParams.set("limit", limit);
 
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`Ошибка загрузки: ${resp.status}`);
-    const json = await resp.json();
-
+    const json = await externalFetch(url);   // 👈 заменили fetch
     const rows = (json.history?.data || []).map((row) => ({
       date: new Date(row[2]).getTime(),
       value: Number(row[5]),
@@ -83,9 +75,9 @@ async function fetchRGBIYearSampled() {
     );
     url.searchParams.set("from", dateStr);
     url.searchParams.set("limit", "1");
-    const resp = await fetch(url);
-    if (resp.ok) {
-      const json = await resp.json();
+
+    try {
+      const json = await externalFetch(url);   // 👈 заменили fetch
       const row = json.history?.data?.[0];
       if (row) {
         points.push({
@@ -93,6 +85,8 @@ async function fetchRGBIYearSampled() {
           value: Number(row[5]),
         });
       }
+    } catch (e) {
+      console.warn("Ошибка загрузки RGBI:", e);
     }
   }
 

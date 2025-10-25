@@ -63,7 +63,10 @@ class BondOut(BaseModel):
     month_open: Optional[float]
     year_open: Optional[float]
     last_buy_price: Optional[float] = None
-
+    stale: bool = False
+    stale_reason: Optional[str] = None
+    nkd: Optional[float] = None
+    
     @computed_field
     @property
     def rating(self) -> str:
@@ -94,6 +97,8 @@ class EventLogIn(BaseModel):
 class BondShort(BaseModel):
     id: int
     name: str
+    currency: Optional[str] = None
+    currency_symbol: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 class TradeIn(BaseModel):
@@ -120,6 +125,9 @@ class TradeOut(TradeIn):
     sell_nkd: Optional[float]
     total_amount: Optional[float]
     bond: Optional[BondShort] 
+    fx_rate: Optional[float] = None
+    buy_commission: Optional[float] = None
+    sell_commission: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -134,6 +142,9 @@ class TradeCreate(BaseModel):
     sell_qty: Optional[int] = None
     sell_nkd: Optional[float] = None
     total_amount: Optional[float] = None
+    fx_rate: Optional[float] = None
+    buy_commission: Optional[float] = None
+    sell_commission: Optional[float] = None
 
 # Базовая схема (общие поля)
 class PortfolioSummaryBase(BaseModel):
@@ -176,3 +187,7 @@ class BondWithWeightOut(BaseModel):
     bond_value: Optional[float] = None
     weight: Optional[float] = None
 
+class FxRateOut(BaseModel):
+    currency: str
+    rate: float
+    updated_at: Optional[datetime]
