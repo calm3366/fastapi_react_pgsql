@@ -2,6 +2,8 @@
 from bs4 import BeautifulSoup
 import httpx, re
 import logging
+from typing import Optional
+from . import other
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +61,11 @@ async def fetch_ratings_from_corpbonds(code: str, is_ofz: bool = False):
             el = soup.select_one("main section main article:nth-of-type(1) table tr:nth-of-type(2) td:nth-of-type(2) p span.val")
         if el:
             raw = el.get_text(strip=True)
-            logger.debug(f"YTM raw text (direct): {raw}")
+            # logger.debug(f"YTM raw text (direct): {raw}")
             cleaned = raw.replace("%", "").replace("\xa0", "").replace(" ", "")
             try:
                 ytm_val = float(cleaned.replace(",", "."))
-                logger.debug(f"YTM parsed (direct): {ytm_val}")
+                # logger.debug(f"YTM parsed (direct): {ytm_val}")
             except ValueError:
                 logger.debug("YTM parse failed (direct), leaving as None")
                 ytm_val = None
@@ -129,6 +131,22 @@ async def fetch_ratings_from_corpbonds(code: str, is_ofz: bool = False):
             if _looks_like_formula(txt):
                 ratings["coupon_rate"] = txt
                 break
-
-    logger.debug(f"Corpbonds parsed: {code} -> {ratings}")
     return ratings
+
+async def detect_amortization_from_corpbonds(bond_code: str) -> Optional[bool]:
+    url = f"https://corpbonds.ru/bond/{bond_code}"
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        # Ищем ячейку с текстом "Амортизация"
+        rows = soup.select("article.bond-info__item table tbody tr")
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) >= 2 and "амортизац" in cells[0].get_text(strip=True).lower():
+                val = cells[1].get_text(strip=True).lower()
+                if val == "да":
+                    return True
+                if val == "нет":
+                    return False
+        return None

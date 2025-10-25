@@ -8,7 +8,7 @@
 
 # Python
 __pycache__/
-backend/migrations/versions/*.py
+backend/migrations/versions/*.py*
 *.pyc
 
 # MacOS
@@ -20,3 +20,6 @@ opensearch/
 # Конкретные файлы
 promt.txt
 backend/app/main.py
+backend/postgres-init
+fix*.sh
+test_error.py

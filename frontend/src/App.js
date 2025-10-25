@@ -7,6 +7,7 @@ import TradesPage from "./TradesPage";
 import SummaryPanel from "./SummaryPanel";
 import VolumePanel from "./VolumePanel";
 import RGBIChart from "./RGBIChart";
+import FxRatesPanel from "./FxRatesPanel";
 import "./index.css";
 
 
@@ -72,7 +73,7 @@ export default function App() {
       .then(setLogs)
       .catch(err => console.error("Ошибка загрузки логов", err));
     loadSummary();
-  }, []);
+  }, [API_URL]);
 
   const addLog = async (msg) => {
     try {
@@ -210,6 +211,7 @@ export default function App() {
 
   return (
     <div className="dashboard">
+      <FxRatesPanel />
       <div className="up-panel">
         <BondsPage
           query={query}
@@ -226,6 +228,7 @@ export default function App() {
           onToggleRGBI={setShowRGBI} 
           loadPositions={loadPositions}
           loadCoupons={loadCoupons}
+          loadBonds={loadBonds}  
         />
       </div>
       <VolumePanel bonds={enrichedBonds} /> 
@@ -245,7 +248,7 @@ export default function App() {
         />
       <div className="bottom-panel"> 
         <div className="left-panel">
-          <TradesPage addLog={addLog} loadSummary={loadSummary} loadBonds={loadBonds} loadPositions={loadPositions} loadCoupons={loadCoupons}/>
+          <TradesPage addLog={addLog} loadSummary={loadSummary} loadBonds={loadBonds} loadPositions={loadPositions} loadCoupons={loadCoupons} />
         </div>
         <div className="center-panel">
           <CouponsPage bonds={bonds} coupons={coupons} loadCoupons={loadCoupons}/>

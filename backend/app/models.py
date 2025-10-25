@@ -3,6 +3,7 @@ from sqlalchemy import Column, String, Date, Float, Integer, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
+from datetime import datetime
 
 class Bond(Base):
     __tablename__ = "bonds"
@@ -21,7 +22,6 @@ class Bond(Base):
     ytm          = Column(Float, nullable=True) 
     ytm_date     = Column(Date,  nullable=True) 
     last_price = Column(Float, nullable=True)    
-    last_buy_price = Column(Float, nullable=True)  
     amortization = Column(Boolean, nullable=True)     
     offer_date = Column(Date, nullable=True)  
     # связь с таблицей цен
@@ -42,6 +42,8 @@ class Bond(Base):
     week_open = Column(Float, nullable=True)
     month_open = Column(Float, nullable=True)
     year_open = Column(Float, nullable=True)
+    stale_reason = Column(String, nullable=True) 
+    nkd = Column(Float, nullable=True) 
 
 class Price(Base):
     __tablename__ = "prices"
@@ -67,21 +69,23 @@ class Trade(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     bond_id = Column(Integer, ForeignKey("bonds.id"), nullable=False)
+    date = Column(Date, nullable=True)
 
     buy_date = Column(Date, nullable=True)
     buy_price = Column(Float, nullable=True)
     buy_qty = Column(Integer, nullable=True)
     buy_nkd = Column(Float, nullable=True)
-
+    buy_commission = Column(Float, nullable=True)
     sell_date = Column(Date, nullable=True)
     sell_price = Column(Float, nullable=True)
     sell_qty = Column(Integer, nullable=True)
     sell_nkd = Column(Float, nullable=True)
+    sell_commission = Column(Float, nullable=True)
 
     total_amount = Column(Float, nullable=True)  
     bond = relationship("Bond", back_populates="trades")
 
-    date = Column(Date, nullable=True)
+    fx_rate = Column(Float, nullable=True)
 
 class Coupon(Base):
     __tablename__ = "coupons"
@@ -104,3 +108,9 @@ class PortfolioSummaryDB(Base):
     current_value = Column(Float, default=0.0)
     total_value = Column(Float, default=0.0)
     profit_percent = Column(Float, default=0.0)
+
+class FxRate(Base):
+    __tablename__ = "fx_rates"
+    currency = Column(String(8), primary_key=True)   # например "USD", "EUR"
+    rate = Column(Float, nullable=False)             # рублей за 1 unit валюты
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

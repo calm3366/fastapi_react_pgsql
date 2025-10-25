@@ -1,0 +1,70 @@
+{
+  "name": "Error Alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "error-alert",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "Webhook1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const data = $json.body ?? $json;\n\nreturn [{\n  json: {\n    chatId: $env.TELEGRAM_CHAT_ID,\n    text: `❗ Ошибка в сервисе ${data.service}\\n🕒 Время: ${data.timestamp}\\n📄 Сообщение:\\n${data.error}`,\n    service: data.service,\n    timestamp: data.timestamp,\n    error: data.error\n  }\n}];"
+      },
+      "id": "Code1",
+      "name": "Format Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "text": "={{$json[\"text\"]}}",
+        "additionalFields": {}
+      },
+      "id": "Telegram1",
+      "name": "Send a text message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [750, 300],
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Format Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Message": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

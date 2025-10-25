@@ -9,6 +9,8 @@ RUN npm install
 
 # Копируем остальной код фронтенда
 COPY frontend/ .
+# Установите URL API для билд-тайма
+# Если вы хотите в билд встроить обращение на backend внутри docker-сети:
 RUN npm run build
 
 
@@ -38,5 +40,3 @@ RUN if [ "$DEV_MODE" = "false" ]; then mkdir -p app/static; fi
 COPY --from=build-frontend /frontend/build ./app/static
 
 EXPOSE 8000
-
-# CMD ["/wait-for-db.sh", "db", "sh", "-c", "alembic upgrade head && gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 --timeout 120"]
